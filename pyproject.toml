@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msttools-cli"
+version = "1.1.0"
+description = "All-in-one terminal toolkit for project analysis, Git, networking, diagnostics, and developer utilities."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "MST TEAM"}]
+dependencies = []
+
+[project.scripts]
+mst = "msttools.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Cryvess/MST-Tools"
+Repository = "https://github.com/Cryvess/MST-Tools"
+Issues = "https://github.com/Cryvess/MST-Tools/issues"
+
+[tool.setuptools]
+packages = ["msttools"]

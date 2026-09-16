@@ -1,251 +1,98 @@
 # MSTTools
 
-A lightweight, all-in-one developer utility CLI for project analysis, Git, system diagnostics, networking, and everyday development tasks.
+A lightweight all-in-one developer utility CLI built by MST TEAM.
 
-Install MSTTools once and launch it from any project directory with:
+MSTTools analyzes the project in the directory where you run it and provides
+project analysis, Git tools, networking utilities, diagnostics, system
+information, security checks, and development utilities from one terminal UI.
 
-```bash
-mst
-```
+## Install once
 
-MSTTools uses your current working directory as the active project, allowing you to inspect and analyze different projects without copying MSTTools into them.
+Clone/download this repository, open a terminal inside the repository folder,
+and run:
 
-## Features
-
-### Project Analysis
-- Project overview and statistics
-- Project health checks
-- Source line and language statistics
-- Project tree viewer
-- File and text search
-- TODO / FIXME scanner
-- Duplicate file detection
-- Large file detection
-- Dependency information
-- Project manifest inspection
-- Project cleaner
-- JSON project reports
-
-### Git Tools
-- Git status
-- Commit history
-- Repository information
-- Branch viewer
-- Remote viewer
-- Working-tree diff
-- Staged diff
-- Repository summary
-
-### System & Diagnostics
-- Detailed system information
-- System summary
-- System uptime
-- Disk information
-- Developer dashboard
-- Running process viewer
-- Environment information
-- Developer tool detection
-- MSTTools Doctor
-- Basic benchmark
-
-### Networking
-- Network information
-- Ping
-- DNS lookup
-- HTTP checks
-- Localhost port scanner
-- Local development HTTP server
-
-> The port scanner is intentionally restricted to the local machine.
-
-### Security & Utilities
-- Basic project security checks
-- File hashing
-- Environment-variable inspection with sensitive-value masking
-
----
-
-## Installation
-
-### Install directly from GitHub
-
-Make sure Python 3.9+ and Git are installed.
-
-```bash
-python -m pip install git+https://github.com/Cryvess/MST-Tools.git
-```
-
-After installation:
-
-```bash
-mst
-```
-
-That's it. MSTTools can now be launched from any directory.
-
-### Install from source
-
-Clone the repository:
-
-```bash
-git clone https://github.com/Cryvess/MST-Tools.git
-cd MST-Tools
-```
-
-Install:
-
-```bash
+```powershell
 python -m pip install .
 ```
 
-Then launch:
+After that, open any terminal and run:
 
-```bash
+```powershell
 mst
 ```
 
----
+The colorful numbered MSTTools menu opens immediately.
 
-## Usage
+## Analyze another project
 
-MSTTools analyzes the directory where you launch it.
+MSTTools analyzes your current terminal directory:
 
-For example:
-
-```bash
-cd path/to/my-project
+```powershell
+cd C:\Projects\MyProject
 mst
 ```
 
-MSTTools will treat `my-project` as the active project.
+So MSTTools does not need to be copied into every project.
 
-You can install MSTTools once and use it across multiple projects:
+## Verify installation
 
-```text
-Project-A > mst
-Project-B > mst
-Project-C > mst
-```
-
-No MSTTools files need to be copied into your projects.
-
-### Check version
-
-```bash
+```powershell
 mst --version
 ```
 
-### Alternative launch
+## Development install
 
-MSTTools can also be launched as a Python module:
+If you are developing MSTTools itself:
 
-```bash
-python -m msttools
-```
-
----
-
-## Windows PATH
-
-On some Windows Python installations, `pip` may install the `mst` command into a Scripts directory that is not included in your PATH.
-
-If the installation succeeds but:
-
-```text
-'mst' is not recognized as an internal or external command
-```
-
-check the warning printed by `pip`. It will show the Scripts directory where `mst.exe` was installed.
-
-Add that directory to your user `PATH`, open a new terminal, and verify the installation:
-
-```cmd
-where mst
-```
-
-Then run:
-
-```cmd
-mst
-```
-
----
-
-## Requirements
-
-- Python 3.9 or newer
-- Windows, Linux, or macOS
-- Git recommended for Git-related functionality
-
-Some detailed hardware and operating-system information is platform-specific.
-
----
-
-## Project Health
-
-MSTTools can perform a quick health check of the active project and detect common project components such as:
-
-- Git repository
-- README
-- License
-- `.gitignore`
-- Dependency manifests
-- Tests
-- CI configuration
-
-Project Health is intended as a quick development and maintenance overview. It is not a guarantee of software quality or security.
-
----
-
-## Security
-
-MSTTools includes lightweight security-oriented checks designed to help developers identify common project issues.
-
-These checks are not a replacement for a professional security audit or dedicated security scanner.
-
-Network port scanning is intentionally restricted to localhost.
-
----
-
-## Development
-
-For an editable development installation:
-
-```bash
-git clone https://github.com/Cryvess/MST-Tools.git
-cd MST-Tools
+```powershell
 python -m pip install -e .
 ```
 
-You can then test changes directly with:
+Changes to the package source will then be available without reinstalling it.
 
-```bash
-mst
+## Update
+
+From the MSTTools repository:
+
+```powershell
+python -m pip install --upgrade .
 ```
-
----
 
 ## Uninstall
 
-```bash
+```powershell
 python -m pip uninstall msttools-cli
 ```
 
----
+## Alternative launch
 
-## Contributing
+```powershell
+python -m msttools
+```
 
-Bug reports, feature suggestions, and contributions are welcome.
+## Main features
 
-If you find a problem or have an idea for MSTTools, feel free to open an issue or submit a pull request.
+- Colorful numbered interactive menu
+- System information, disk information, and uptime
+- Project inspector, statistics, health checks, and tree
+- Git status, log, info, branches, remotes, and diffs
+- Project search and TODO/FIXME scanner
+- Duplicate and large-file detection
+- Dependency and manifest inspection
+- Basic project security checks
+- Localhost port scanner, ping, DNS, and HTTP checks
+- Developer environment and process inspection
+- Project cleaner and file hashing
+- Local development server
+- Dashboard, benchmark, and JSON reports
 
----
+## Requirements
+
+Python 3.9 or newer.
+
+MSTTools supports Windows, Linux, and macOS. Some detailed system/hardware
+information is Windows-specific.
 
 ## License
 
-MSTTools is licensed under the [MIT License](LICENSE).
-
----
-
-**MSTTools v1.1.0**  
-Developer Utilities by MST TEAM
+MIT
