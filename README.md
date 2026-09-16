@@ -1,98 +1,96 @@
-# MSTTools
+## Installation
 
-A lightweight all-in-one developer utility CLI built by MST TEAM.
+### Windows
 
-MSTTools analyzes the project in the directory where you run it and provides
-project analysis, Git tools, networking utilities, diagnostics, system
-information, security checks, and development utilities from one terminal UI.
+1. Download the latest MSTTools release from the **Releases** section.
+2. Extract the downloaded ZIP file.
+3. Open Command Prompt or PowerShell inside the extracted folder.
+4. Install MSTTools:
 
-## Install once
-
-Clone/download this repository, open a terminal inside the repository folder,
-and run:
-
-```powershell
+```bash
 python -m pip install .
 ```
 
-After that, open any terminal and run:
+5. After installation, launch MSTTools from any directory:
 
-```powershell
+```bash
 mst
 ```
 
-The colorful numbered MSTTools menu opens immediately.
+MSTTools only needs to be installed once.
 
-## Analyze another project
+### Verify Installation
 
-MSTTools analyzes your current terminal directory:
+Check that MSTTools was installed correctly:
 
-```powershell
-cd C:\Projects\MyProject
-mst
-```
-
-So MSTTools does not need to be copied into every project.
-
-## Verify installation
-
-```powershell
+```bash
 mst --version
 ```
 
-## Development install
+You should see:
 
-If you are developing MSTTools itself:
-
-```powershell
-python -m pip install -e .
+```text
+MSTTools 1.1.0
 ```
 
-Changes to the package source will then be available without reinstalling it.
+### Using MSTTools
 
-## Update
+Navigate to a project you want to inspect:
 
-From the MSTTools repository:
-
-```powershell
-python -m pip install --upgrade .
+```bash
+cd C:\Projects\MyProject
 ```
 
-## Uninstall
+Then run:
 
-```powershell
+```bash
+mst
+```
+
+MSTTools will analyze the current directory and open the interactive terminal menu.
+
+For example:
+
+```text
+C:\Projects\Project-A> mst
+C:\Projects\Project-B> mst
+C:\Projects\Project-C> mst
+```
+
+You do not need to copy MSTTools into each project.
+
+### Windows PATH Troubleshooting
+
+If installation succeeds but Windows displays:
+
+```text
+'mst' is not recognized as an internal or external command
+```
+
+look at the warning printed during installation. Python may show a path similar to:
+
+```text
+...\Python312\Scripts
+```
+
+Add the exact `Scripts` directory shown on your computer to your user `PATH`.
+
+Then close and reopen Command Prompt and verify:
+
+```bash
+where mst
+```
+
+If `mst.exe` is found, run:
+
+```bash
+mst
+```
+
+### Uninstall
+
+To remove MSTTools:
+
+```bash
 python -m pip uninstall msttools-cli
 ```
-
-## Alternative launch
-
-```powershell
-python -m msttools
-```
-
-## Main features
-
-- Colorful numbered interactive menu
-- System information, disk information, and uptime
-- Project inspector, statistics, health checks, and tree
-- Git status, log, info, branches, remotes, and diffs
-- Project search and TODO/FIXME scanner
-- Duplicate and large-file detection
-- Dependency and manifest inspection
-- Basic project security checks
-- Localhost port scanner, ping, DNS, and HTTP checks
-- Developer environment and process inspection
-- Project cleaner and file hashing
-- Local development server
-- Dashboard, benchmark, and JSON reports
-
-## Requirements
-
-Python 3.9 or newer.
-
-MSTTools supports Windows, Linux, and macOS. Some detailed system/hardware
-information is Windows-specific.
-
-## License
-
-MIT
