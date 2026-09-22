@@ -10,3 +10,5 @@ venv/
 .mypy_cache/
 .ruff_cache/
 msttools-report.json
+.msttools/
+*.zip

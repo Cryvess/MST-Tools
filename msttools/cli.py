@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import shutil
+import shlex
 import socket
 import subprocess
 import sys
@@ -22,7 +23,7 @@ from pathlib import Path
 # Developer Utility CLI
 # ============================================================
 
-VERSION = "1.1.0"
+from . import __version__ as VERSION
 
 RESET = "\033[0m"
 BLUE = "\033[94m"
@@ -34,6 +35,15 @@ RED = "\033[91m"
 WHITE = "\033[97m"
 GRAY = "\033[90m"
 MAGENTA = "\033[95m"
+
+_PALETTE = {name: globals()[name] for name in
+            ('RESET', 'BLUE', 'LIGHT_BLUE', 'YELLOW', 'ORANGE', 'GREEN', 'RED', 'WHITE', 'GRAY', 'MAGENTA')}
+_errors = 0
+
+
+def configure_colors(enabled):
+    for name, value in _PALETTE.items():
+        globals()[name] = value if enabled else ''
 
 if os.name == "nt":
     os.system("")
@@ -105,8 +115,8 @@ def clear():
     os.system("cls" if os.name == "nt" else "clear")
 
 
-def line(char="─", length=72, color=BLUE):
-    print(color + char * length + RESET)
+def line(char="─", length=72, color=None):
+    print((BLUE if color is None else color) + char * length + RESET)
 
 
 def title(text):
@@ -125,6 +135,8 @@ def warning(text):
 
 
 def error(text):
+    global _errors
+    _errors += 1
     print(f"{RED}[-]{RESET} {text}")
 
 
@@ -155,11 +167,11 @@ def show_logo():
 """)
 
 
-def status_line(ok, text):
+def status_line(ok, text, failure_text=None):
     if ok:
         success(text)
     else:
-        warning(text)
+        warning(failure_text if failure_text is not None else text)
 
 
 # ============================================================
@@ -203,15 +215,15 @@ def format_duration(seconds):
 def run(command, timeout=10):
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            shlex.split(command) if isinstance(command, str) else command,
+            shell=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
         )
-        return (result.stdout or "").strip()
+        return (result.stdout or result.stderr or "").rstrip("\r\n") if result.returncode == 0 else ""
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return ""
     except Exception:
@@ -305,18 +317,8 @@ def is_ignored(path):
 
 
 def project_files(root="."):
-    root = Path(root)
-    try:
-        for path in root.rglob("*"):
-            if is_ignored(path):
-                continue
-            try:
-                if path.is_file():
-                    yield path
-            except OSError:
-                continue
-    except OSError:
-        return
+    from .workspace import files, settings
+    yield from files(root, settings(root)['ignore'])
 
 
 def read_text(path, max_bytes=5_000_000):
@@ -576,7 +578,7 @@ def find_large_files(limit="10MB", count=20):
     try:
         minimum = parse_size(limit)
     except ValueError:
-        error("Invalid size. Examples: 500KB, 10MB, 1GB")
+        error("Invalid size. Enter a number followed by B, KB, MB or GB.")
         return
 
     results = []
@@ -599,35 +601,12 @@ def find_large_files(limit="10MB", count=20):
 
 def duplicate_files():
     title("DUPLICATE FILE FINDER")
-    groups = defaultdict(list)
-
-    for path in project_files():
-        stat = safe_stat(path)
-        if not stat or stat.st_size == 0:
-            continue
-        groups[stat.st_size].append(path)
-
-    candidates = [paths for paths in groups.values() if len(paths) > 1]
-    if not candidates:
-        success("No duplicate-size candidates found.")
-        return
-
     duplicates = 0
-    for paths in sorted(candidates, key=lambda p: len(p), reverse=True):
-        hashes = defaultdict(list)
-        for path in paths:
-            digest = sha256_file(path)
-            if digest:
-                hashes[digest].append(path)
-
-        for digest, same in hashes.items():
-            if len(same) < 2:
-                continue
-            duplicates += 1
-            print(f"\n{MAGENTA}SHA256 {digest[:16]}...{RESET}")
-            for path in same:
-                print(f"  {YELLOW}{relative(path)}{RESET}")
-
+    for same in _duplicate_groups():
+        duplicates += 1
+        print(f"\n{MAGENTA}Duplicate group {duplicates}{RESET}")
+        for path in same:
+            print(f"  {YELLOW}{relative(path)}{RESET}")
     if duplicates:
         success(f"{duplicates} duplicate group(s) detected.")
     else:
@@ -697,43 +676,20 @@ def search_project(query, regex=False, extension=None, case_sensitive=False, max
     if not query:
         error("Search query is required.")
         return
-
-    root = Path.cwd()
     flags = 0 if case_sensitive else re.IGNORECASE
     try:
-        pattern = re.compile(query, flags) if regex else None
+        pattern = re.compile(query if regex else re.escape(query), flags)
     except re.error as exc:
         error(f"Invalid regular expression: {exc}")
         return
-
+    root = Path.cwd()
     found = 0
-    for file in project_files(root):
-        if extension:
-            ext = extension.lower()
-            if not ext.startswith("."):
-                ext = "." + ext
-            if file.suffix.lower() != ext:
-                continue
-
-        text = read_text(file)
-        if text is None:
-            continue
-
-        for number, text_line in enumerate(text.splitlines(), 1):
-            matched = bool(pattern.search(text_line)) if pattern else (
-                query in text_line if case_sensitive
-                else query.lower() in text_line.lower()
-            )
-            if matched:
-                print(
-                    f"{YELLOW}{relative(file, root)}:{number}{RESET} "
-                    f"{WHITE}{text_line.strip()}{RESET}"
-                )
-                found += 1
-                if found >= max_results:
-                    warning(f"Search result limit reached ({max_results}).")
-                    return
-
+    for path, number, text in _search_matches(root, pattern, extension):
+        print(f"{YELLOW}{relative(path, root)}:{number}{RESET} {WHITE}{text.strip()}{RESET}")
+        found += 1
+        if found >= max(1, max_results):
+            warning(f"Search result limit reached ({max_results}).")
+            return
     if found:
         success(f"{found} match(es) found.")
     else:
@@ -748,8 +704,8 @@ def git_available():
     if not command_exists("git"):
         error("Git is not installed or not available in PATH.")
         return False
-    if not (Path.cwd() / ".git").exists():
-        warning("Current directory is not a Git repository.")
+    if run("git rev-parse --is-inside-work-tree") != 'true':
+        error("Current directory is not a Git repository.")
         return False
     return True
 
@@ -767,7 +723,7 @@ def git_status():
         print(output)
         changes = output.splitlines()
         section("Summary")
-        modified = sum(1 for x in changes if x and x[0] in "MADRC")
+        modified = sum(any(code in "MADRC" for code in x[:2]) for x in changes)
         untracked = sum(1 for x in changes if x.startswith("??"))
         deleted = sum(1 for x in changes if "D" in x[:2])
         label("Changed entries", len(changes))
@@ -905,6 +861,21 @@ def system_info():
             pass
         return
 
+    _system_windows()
+    _system_computer()
+    _system_cpu()
+    _system_motherboard()
+    _system_bios()
+    _system_gpu()
+    _system_ram_modules()
+    _system_storage()
+    _system_network_adapters()
+    _system_monitors()
+    _system_firmware_security()
+    _system_power()
+
+
+def _system_windows():
     section("Windows")
     os_info = get_cim(
         "OperatingSystem",
@@ -924,6 +895,8 @@ def system_info():
     ):
         label(key, clean_value(os_info.get(field)))
 
+
+def _system_computer():
     section("Computer")
     computer = get_cim(
         "ComputerSystem",
@@ -944,6 +917,8 @@ def system_info():
     if computer.get("TotalPhysicalMemory"):
         label("Installed RAM", format_bytes(computer["TotalPhysicalMemory"]))
 
+
+def _system_cpu():
     section("CPU")
     cpus = get_cim_all(
         "Processor",
@@ -962,6 +937,8 @@ def system_info():
         if cpu.get("MaxClockSpeed"):
             label("Max Clock", f"{cpu['MaxClockSpeed']} MHz")
 
+
+def _system_motherboard():
     section("Motherboard")
     for board in get_cim_all(
         "BaseBoard", ["Manufacturer", "Product", "Version", "SerialNumber"]
@@ -971,6 +948,8 @@ def system_info():
         label("Version", clean_value(board.get("Version")))
         label("Serial", clean_value(board.get("SerialNumber")))
 
+
+def _system_bios():
     section("BIOS")
     bios = get_cim(
         "BIOS",
@@ -983,6 +962,8 @@ def system_info():
     ):
         label(key, clean_value(bios.get(field)))
 
+
+def _system_gpu():
     section("GPU")
     gpus = get_cim_all(
         "VideoController",
@@ -1004,6 +985,8 @@ def system_info():
         label("Resolution", f"{width}x{height}")
         label("Refresh Rate", clean_value(gpu.get("CurrentRefreshRate")))
 
+
+def _system_ram_modules():
     section("RAM Modules")
     modules = get_cim_all(
         "PhysicalMemory",
@@ -1019,6 +1002,8 @@ def system_info():
         label("Serial", clean_value(ram.get("SerialNumber")))
         label("Slot", clean_value(ram.get("DeviceLocator")))
 
+
+def _system_storage():
     section("Storage")
     disks = get_cim_all(
         "DiskDrive",
@@ -1034,6 +1019,8 @@ def system_info():
             label("Size", format_bytes(disk["Size"]))
         label("Serial", clean_value(disk.get("SerialNumber")))
 
+
+def _system_network_adapters():
     section("Network Adapters")
     adapters = get_cim_all(
         "NetworkAdapterConfiguration",
@@ -1055,6 +1042,8 @@ def system_info():
         label("DNS", ", ".join(dns) if isinstance(dns, list) else clean_value(dns))
         label("DHCP", clean_value(adapter.get("DHCPEnabled")))
 
+
+def _system_monitors():
     section("Monitors")
     monitors = get_cim_all(
         "DesktopMonitor",
@@ -1070,10 +1059,14 @@ def system_info():
             f"{clean_value(monitor.get('ScreenWidth'))}x{clean_value(monitor.get('ScreenHeight'))}",
         )
 
+
+def _system_firmware_security():
     section("Firmware / Security")
     secure_boot = powershell("Confirm-SecureBootUEFI", timeout=5)
     label("Secure Boot", secure_boot or "Unavailable")
 
+
+def _system_power():
     section("Power")
     batteries = get_cim_all(
         "Battery", ["Name", "BatteryStatus", "EstimatedChargeRemaining", "EstimatedRunTime"]
@@ -1194,19 +1187,6 @@ def network_info():
     except socket.gaierror:
         warning("Could not determine local IP addresses.")
 
-    section("Internet Test")
-    for host, port in (("1.1.1.1", 53), ("8.8.8.8", 53)):
-        start = time.perf_counter()
-        try:
-            with socket.create_connection((host, port), timeout=3):
-                latency = (time.perf_counter() - start) * 1000
-            success(f"{host}:{port} reachable ({latency:.0f} ms)")
-            break
-        except OSError:
-            continue
-    else:
-        error("Internet connection test failed.")
-
     if os.name == "nt":
         section("IP Configuration")
         output = run("ipconfig /all", timeout=10)
@@ -1216,7 +1196,7 @@ def network_info():
 
 def ping_host(host, timeout=2):
     title("HOST PING")
-    if not host:
+    if not host or host.startswith("-"):
         error("Host is required.")
         return
 
@@ -1291,50 +1271,12 @@ def http_check(url):
 
 
 def scan_ports(host="127.0.0.1", start=None, end=None, timeout=0.15):
-    title("PORT SCANNER")
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        warning("MSTTools port scanning is intentionally limited to the local machine.")
+    from .toolkit import scan_ports as probe
+    from .ui import result
+    if host not in {"127.0.0.1", "localhost"}:
+        error("This command supports IPv4 localhost only.")
         return
-
-    if start is not None or end is not None:
-        first = start if start is not None else 1
-        last = end if end is not None else first
-        first = max(1, int(first))
-        last = min(65535, int(last))
-        if last < first:
-            error("Invalid port range.")
-            return
-        ports = range(first, last + 1)
-        if last - first > 2000:
-            warning("Range limited to 2000 ports for responsiveness.")
-            ports = range(first, first + 2000)
-    else:
-        ports = COMMON_PORTS.keys()
-
-    info(f"Scanning {host}...")
-    found = []
-
-    for port in ports:
-        sock = socket.socket(socket.AF_INET6 if host == "::1" else socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        try:
-            if sock.connect_ex((host, port)) == 0:
-                name = COMMON_PORTS.get(port, "Unknown")
-                found.append(port)
-                print(
-                    f"{GREEN}[OPEN]{RESET} "
-                    f"{YELLOW}{port:<6}{RESET} "
-                    f"{WHITE}{name}{RESET}"
-                )
-        except OSError:
-            pass
-        finally:
-            sock.close()
-
-    if found:
-        success(f"{len(found)} open port(s) detected.")
-    else:
-        info("No open ports found in the selected range.")
+    result(probe(start, end), 'LOCAL PORTS')
 
 
 # ============================================================
@@ -1474,7 +1416,8 @@ def print_tree(path, prefix="", depth=0, max_depth=3):
 
     try:
         entries = sorted(
-            [entry for entry in path.iterdir() if entry.name not in IGNORED_DIRS],
+            [entry for entry in path.iterdir() if entry.name not in IGNORED_DIRS
+             and not entry.is_symlink() and not getattr(entry, 'is_junction', lambda: False)()],
             key=lambda item: (item.is_file(), item.name.lower()),
         )
     except (PermissionError, OSError):
@@ -1504,139 +1447,29 @@ def tree(max_depth=3):
 
 
 def clean_project(execute=False):
-    title("PROJECT CLEANER")
-    root = Path.cwd()
-    found = []
-
-    for path in root.rglob("*"):
-        try:
-            if not path.is_dir() or is_ignored(path):
-                continue
-            if path.name in CLEAN_TARGETS:
-                if any(parent.name in CLEAN_TARGETS for parent in path.parents):
-                    continue
-                found.append(path)
-        except OSError:
-            continue
-
-    if not found:
-        success("No cleanup targets found.")
-        return
-
-    total_size = 0
-    for path in found:
-        size = 0
-        try:
-            for item in path.rglob("*"):
-                stat = safe_stat(item)
-                if stat and item.is_file():
-                    size += stat.st_size
-        except OSError:
-            pass
-        total_size += size
-        print(f"{YELLOW}{path}{RESET} {GRAY}({format_bytes(size)}){RESET}")
-
-    section("Summary")
-    label("Folders", len(found))
-    label("Estimated reclaim", format_bytes(total_size))
-
-    if not execute:
-        warning("Preview only. Nothing was deleted.")
-        info("Use: mst clean --execute")
-        return
-
-    confirm = input(f"{ORANGE}Delete these folders? [y/N] {RESET}").strip().lower()
-    if confirm != "y":
-        warning("Cancelled. Nothing was deleted.")
-        return
-
-    deleted = 0
-    for path in found:
-        try:
-            shutil.rmtree(path)
-            deleted += 1
-            success(f"Deleted: {path}")
-        except OSError as exc:
-            error(f"Could not delete {path}: {exc}")
-
-    success(f"{deleted} folder(s) removed.")
+    from .cleanup import command
+    command(execute)
 
 
 def security_check():
-    title("PROJECT SECURITY CHECK")
+    title('PROJECT SECURITY CHECK')
     root = Path.cwd()
-
-    dangerous_files = {
-        ".env", ".env.local", ".env.production", ".env.development",
-        "id_rsa", "id_ed25519", "credentials.json", "service-account.json",
-        ".npmrc", ".pypirc",
-    }
-
-    found = []
-    for path in project_files(root):
-        if path.name.lower() in {name.lower() for name in dangerous_files}:
-            found.append(path)
-
-    if found:
-        for path in found:
-            warning(f"Sensitive-looking file: {relative(path)}")
-        warning("Review these files before committing or publishing.")
-    else:
-        success("No obvious sensitive filenames detected.")
-
-    gitignore = root / ".gitignore"
-    status_line(
-        gitignore.exists(),
-        ".gitignore exists.",
-        ".gitignore is missing.",
-    )
-
-    if git_available():
-        tracked = run("git ls-files")
-        suspicious = []
-        if tracked:
-            for item in tracked.splitlines():
-                lower = item.lower()
-                if any(word in lower for word in (
-                    ".env", "id_rsa", "id_ed25519", "credentials",
-                    "service-account", "secret", "password",
-                )):
-                    suspicious.append(item)
-
-        if suspicious:
-            error("Potentially sensitive filenames are tracked by Git:")
-            for item in suspicious:
-                print(f"{RED}  {item}{RESET}")
-        else:
-            success("No obvious secret filenames are tracked by Git.")
-
-    section("Quick Secret Pattern Scan")
-    patterns = [
-        re.compile(r"(?i)\bAKIA[0-9A-Z]{16}\b"),
-        re.compile(r"(?i)\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
-        re.compile(r"(?i)\bsk-[A-Za-z0-9_-]{20,}\b"),
-        re.compile(r"(?i)-----BEGIN (?:RSA|EC|OPENSSH|DSA) PRIVATE KEY-----"),
-    ]
-
+    _sensitive_files(root)
+    message = '.gitignore exists.' if (root / '.gitignore').exists() else '.gitignore is missing.'
+    status_line((root / '.gitignore').exists(), message)
+    _sensitive_tracked_files()
+    section('Quick Secret Pattern Scan')
     hits = 0
-    for path in project_files(root):
-        text = read_text(path, max_bytes=1_000_000)
-        if text is None:
-            continue
-        for number, line_text in enumerate(text.splitlines(), 1):
-            for pattern in patterns:
-                if pattern.search(line_text):
-                    warning(f"Possible secret pattern: {relative(path)}:{number}")
-                    hits += 1
-                    break
-            if hits >= 50:
-                warning("Secret scan result limit reached.")
-                return
-
+    for path, number in _secret_locations(root):
+        warning(f'Possible secret pattern: {relative(path)}:{number}')
+        hits += 1
+        if hits >= 50:
+            warning('Secret scan result limit reached.')
+            return
     if hits:
-        warning(f"{hits} possible secret pattern(s) detected. Verify manually.")
+        warning(f'{hits} possible secret pattern(s) detected. Verify manually.')
     else:
-        success("No obvious high-confidence secret patterns detected.")
+        success('No obvious high-confidence secret patterns detected.')
 
 
 # ============================================================
@@ -1644,73 +1477,9 @@ def security_check():
 # ============================================================
 
 def dependency_info():
-    title("PROJECT DEPENDENCIES")
-    root = Path.cwd()
-    found = []
-
-    manifests = [
-        ("Python", "requirements.txt"),
-        ("Python", "requirements-dev.txt"),
-        ("Python", "pyproject.toml"),
-        ("Python", "Pipfile"),
-        ("Python", "poetry.lock"),
-        ("Node", "package.json"),
-        ("Node", "package-lock.json"),
-        ("Node", "yarn.lock"),
-        ("Node", "pnpm-lock.yaml"),
-        ("Rust", "Cargo.toml"),
-        ("Rust", "Cargo.lock"),
-        ("Go", "go.mod"),
-        ("Go", "go.sum"),
-        ("Java", "pom.xml"),
-        ("Java", "build.gradle"),
-        ("Java", "build.gradle.kts"),
-        ("Ruby", "Gemfile"),
-        ("PHP", "composer.json"),
-        ("Docker", "Dockerfile"),
-    ]
-
-    for ecosystem, filename in manifests:
-        path = root / filename
-        if path.exists():
-            found.append((ecosystem, path))
-
-    if not found:
-        warning("No recognized dependency manifests found.")
-        return
-
-    for ecosystem, path in found:
-        print(f"{LIGHT_BLUE}{ecosystem:<10}{RESET}{YELLOW}{path.name}{RESET}")
-
-    section("Python Environment")
-    if (root / "requirements.txt").exists():
-        lines = [
-            line.strip()
-            for line in (root / "requirements.txt").read_text(
-                encoding="utf-8", errors="ignore"
-            ).splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        ]
-        label("requirements entries", len(lines))
-
-    if (root / "pyproject.toml").exists():
-        text = read_text(root / "pyproject.toml") or ""
-        deps = re.findall(r'^\s*["\']([A-Za-z0-9_.-]+)', text, re.M)
-        label("pyproject dependency-like entries", len(deps))
-
-    section("Node Environment")
-    package_json = root / "package.json"
-    if package_json.exists():
-        try:
-            data = json.loads(package_json.read_text(encoding="utf-8"))
-            deps = data.get("dependencies", {})
-            dev = data.get("devDependencies", {})
-            label("dependencies", len(deps))
-            label("devDependencies", len(dev))
-            label("package name", data.get("name", "Unknown"))
-            label("package version", data.get("version", "Unknown"))
-        except (OSError, json.JSONDecodeError):
-            warning("Could not parse package.json.")
+    from argparse import Namespace
+    from .commands import deps
+    return deps(Namespace(command='deps', json=False))
 
 
 def project_manifest():
@@ -1829,8 +1598,9 @@ def serve(directory=".", port=8000):
             print(f"{GRAY}[HTTP]{RESET} {self.address_string()} - {format_string % args}")
 
     try:
-        os.chdir(root)
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", port), QuietHandler)
+        from functools import partial
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port), partial(QuietHandler, directory=str(root)))
     except OSError as exc:
         error(f"Could not start server: {exc}")
         return
@@ -1910,215 +1680,8 @@ def pause():
 
 
 def interactive_menu():
-    """Colorful numbered terminal interface for all MSTTools features."""
-    while True:
-        clear()
-        show_logo()
-        print(f"{GRAY}Version {VERSION}  •  {platform.system()}  •  Python {platform.python_version()}{RESET}")
-        line("═", 72, LIGHT_BLUE)
-
-        print(f"{LIGHT_BLUE}[ SYSTEM ]{RESET}")
-        print(f" {BLUE}[01]{RESET} System Information        {BLUE}[02]{RESET} System Summary")
-        print(f" {BLUE}[03]{RESET} System Uptime             {BLUE}[04]{RESET} Disk Information")
-        print(f" {BLUE}[05]{RESET} Dashboard")
-        print()
-
-        print(f"{LIGHT_BLUE}[ PROJECT ]{RESET}")
-        print(f" {BLUE}[06]{RESET} Project Inspector         {BLUE}[07]{RESET} Project Statistics")
-        print(f" {BLUE}[08]{RESET} Project Health            {BLUE}[09]{RESET} Project Tree")
-        print(f" {BLUE}[10]{RESET} Search Project            {BLUE}[11]{RESET} TODO / FIXME Scanner")
-        print(f" {BLUE}[12]{RESET} Duplicate Finder          {BLUE}[13]{RESET} Large File Finder")
-        print(f" {BLUE}[14]{RESET} Dependencies              {BLUE}[15]{RESET} Project Manifest")
-        print(f" {BLUE}[16]{RESET} Project Cleaner")
-        print()
-
-        print(f"{LIGHT_BLUE}[ GIT ]{RESET}")
-        print(f" {BLUE}[17]{RESET} Git Status                {BLUE}[18]{RESET} Git Log")
-        print(f" {BLUE}[19]{RESET} Git Information           {BLUE}[20]{RESET} Git Branches")
-        print(f" {BLUE}[21]{RESET} Git Remotes               {BLUE}[22]{RESET} Git Diff")
-        print(f" {BLUE}[23]{RESET} Git Staged Diff           {BLUE}[24]{RESET} Git Summary")
-        print()
-
-        print(f"{LIGHT_BLUE}[ NETWORK ]{RESET}")
-        print(f" {BLUE}[25]{RESET} Network Information       {BLUE}[26]{RESET} Ping Host")
-        print(f" {BLUE}[27]{RESET} DNS Lookup                {BLUE}[28]{RESET} HTTP Check")
-        print(f" {BLUE}[29]{RESET} Localhost Port Scanner")
-        print()
-
-        print(f"{LIGHT_BLUE}[ DEVELOPMENT ]{RESET}")
-        print(f" {BLUE}[30]{RESET} Developer Tools           {BLUE}[31]{RESET} MSTTools Doctor")
-        print(f" {BLUE}[32]{RESET} Running Processes         {BLUE}[33]{RESET} Environment Variables")
-        print(f" {BLUE}[34]{RESET} Benchmark                 {BLUE}[35]{RESET} Local Development Server")
-        print()
-
-        print(f"{LIGHT_BLUE}[ SECURITY / UTILITIES ]{RESET}")
-        print(f" {BLUE}[36]{RESET} Security Check            {BLUE}[37]{RESET} File Hash")
-        print(f" {BLUE}[38]{RESET} Generate JSON Report      {BLUE}[39]{RESET} About MSTTools")
-        print()
-        print(f" {RED}[00]{RESET} Exit")
-        line("═", 72, LIGHT_BLUE)
-
-        choice = input(f"{YELLOW}Select an option > {RESET}").strip().lower()
-
-        try:
-            if choice in ("1", "01"):
-                system_info()
-            elif choice in ("2", "02"):
-                system_summary()
-            elif choice in ("3", "03"):
-                uptime()
-            elif choice in ("4", "04"):
-                disk_info()
-            elif choice in ("5", "05"):
-                dashboard()
-
-            elif choice in ("6", "06"):
-                project_inspect()
-            elif choice in ("7", "07"):
-                project_stats()
-            elif choice in ("8", "08"):
-                project_health()
-            elif choice in ("9", "09"):
-                depth = input(f"{YELLOW}Tree depth [3] > {RESET}").strip()
-                try:
-                    depth = max(0, int(depth)) if depth else 3
-                except ValueError:
-                    depth = 3
-                    warning("Invalid depth; using 3.")
-                tree(depth)
-            elif choice == "10":
-                query = input(f"{YELLOW}Search text > {RESET}").strip()
-                if query:
-                    search_project(query)
-                else:
-                    warning("Search text cannot be empty.")
-            elif choice == "11":
-                todo_scan()
-            elif choice == "12":
-                duplicate_files()
-            elif choice == "13":
-                minimum = input(f"{YELLOW}Minimum size [10MB] > {RESET}").strip() or "10MB"
-                find_large_files(minimum)
-            elif choice == "14":
-                dependency_info()
-            elif choice == "15":
-                project_manifest()
-            elif choice == "16":
-                # First preview, then optionally perform the deletion.
-                clean_project(False)
-                answer = input(f"{ORANGE}Run cleaner for real? [y/N] > {RESET}").strip().lower()
-                if answer == "y":
-                    clean_project(True)
-
-            elif choice == "17":
-                git_status()
-            elif choice == "18":
-                raw = input(f"{YELLOW}Commit count [15] > {RESET}").strip()
-                try:
-                    limit = max(1, min(100, int(raw))) if raw else 15
-                except ValueError:
-                    limit = 15
-                    warning("Invalid count; using 15.")
-                git_log(limit)
-            elif choice == "19":
-                git_info()
-            elif choice == "20":
-                git_branches()
-            elif choice == "21":
-                git_remote()
-            elif choice == "22":
-                git_diff(False)
-            elif choice == "23":
-                git_diff(True)
-            elif choice == "24":
-                git_summary()
-
-            elif choice == "25":
-                network_info()
-            elif choice == "26":
-                host = input(f"{YELLOW}Host [127.0.0.1] > {RESET}").strip() or "127.0.0.1"
-                ping_host(host)
-            elif choice == "27":
-                host = input(f"{YELLOW}Hostname > {RESET}").strip()
-                if host:
-                    dns_lookup(host)
-                else:
-                    warning("Hostname cannot be empty.")
-            elif choice == "28":
-                url = input(f"{YELLOW}URL > {RESET}").strip()
-                if url:
-                    http_check(url)
-                else:
-                    warning("URL cannot be empty.")
-            elif choice == "29":
-                print(f"{GRAY}Leave both empty to scan common developer ports.{RESET}")
-                first = input(f"{YELLOW}Start port [common] > {RESET}").strip()
-                last = input(f"{YELLOW}End port [common] > {RESET}").strip()
-                if not first and not last:
-                    scan_ports()
-                else:
-                    try:
-                        first_port = int(first or last)
-                        last_port = int(last or first)
-                        scan_ports("127.0.0.1", first_port, last_port)
-                    except ValueError:
-                        error("Ports must be numbers.")
-
-            elif choice == "30":
-                dev_tools()
-            elif choice == "31":
-                doctor()
-            elif choice == "32":
-                value = input(f"{YELLOW}Process filter [optional] > {RESET}").strip()
-                process_list(value or None)
-            elif choice == "33":
-                environment_info()
-            elif choice == "34":
-                benchmark()
-            elif choice == "35":
-                directory = input(f"{YELLOW}Directory [.] > {RESET}").strip() or "."
-                raw_port = input(f"{YELLOW}Port [8000] > {RESET}").strip() or "8000"
-                try:
-                    port = int(raw_port)
-                    if not 1 <= port <= 65535:
-                        raise ValueError
-                    serve(directory, port)
-                except ValueError:
-                    error("Port must be between 1 and 65535.")
-
-            elif choice == "36":
-                security_check()
-            elif choice == "37":
-                target = input(f"{YELLOW}File path > {RESET}").strip()
-                if target:
-                    algorithm = input(f"{YELLOW}Algorithm [sha256] > {RESET}").strip().lower() or "sha256"
-                    hash_file(target, algorithm)
-                else:
-                    warning("File path cannot be empty.")
-            elif choice == "38":
-                output = input(
-                    f"{YELLOW}Report filename [msttools-report.json] > {RESET}"
-                ).strip() or "msttools-report.json"
-                report(output)
-            elif choice == "39":
-                about()
-
-            elif choice in ("0", "00", "q", "quit", "exit"):
-                clear()
-                show_logo()
-                print(f"{GREEN}Thanks for using MSTTools.{RESET}")
-                break
-            else:
-                error("Invalid option. Select a number from 00 to 39.")
-
-        except KeyboardInterrupt:
-            print()
-            warning("Operation cancelled.")
-        except Exception as exc:
-            error(f"Operation failed: {exc}")
-
-        print()
-        pause()
+    from .app import command_center
+    return command_center()
 
 
 # ============================================================
@@ -2203,7 +1766,7 @@ def build_parser():
     hash_parser.add_argument(
         "--algorithm",
         default="sha256",
-        choices=sorted(hashlib.algorithms_available),
+        choices=sorted(name for name in hashlib.algorithms_available if hashlib.new(name).digest_size),
     )
 
     process_parser = sub.add_parser("process", help="Show running processes")
@@ -2240,125 +1803,138 @@ def build_parser():
 
 
 def cli():
-    parser = build_parser()
-    args = parser.parse_args()
+    run_args(build_parser().parse_args())
 
-    if not args.command:
-        menu()
+
+def _duplicate_groups():
+    sizes = defaultdict(list)
+    for path in project_files():
+        stat = safe_stat(path)
+        if stat and stat.st_size:
+            sizes[stat.st_size].append(path)
+    for paths in sizes.values():
+        if len(paths) > 1:
+            yield from _matching_hashes(paths)
+
+
+
+def _matching_hashes(paths):
+    hashes = defaultdict(list)
+    for path in paths:
+        digest = sha256_file(path)
+        if digest:
+            hashes[digest].append(path)
+    return [same for same in hashes.values() if len(same) > 1]
+
+
+
+def _search_matches(root, pattern, extension):
+    ext = '.' + extension.lower().lstrip('.') if extension else None
+    for path in project_files(root):
+        if ext and path.suffix.lower() != ext:
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for number, line_text in enumerate(text.splitlines(), 1):
+            if pattern.search(line_text):
+                yield path, number, line_text
+
+
+
+def _sensitive_files(root):
+    names = {'.env', '.env.local', '.env.production', '.env.development', 'id_rsa',
+             'id_ed25519', 'credentials.json', 'service-account.json', '.npmrc', '.pypirc'}
+    found = [path for path in project_files(root) if path.name.lower() in names]
+    for path in found:
+        warning(f"Sensitive-looking file: {relative(path)}")
+    if found:
+        warning("Review these files before committing or publishing.")
+    else:
+        success("No obvious sensitive filenames detected.")
+
+
+
+def _sensitive_tracked_files():
+    if run('git rev-parse --is-inside-work-tree') != 'true':
+        info('Git tracking checks skipped: not inside a Git repository.')
         return
+    words = ('.env', 'id_rsa', 'id_ed25519', 'credentials', 'service-account', 'secret', 'password')
+    tracked = run('git ls-files').splitlines()
+    suspicious = [item for item in tracked if any(word in item.lower() for word in words)]
+    if suspicious:
+        warning('Potentially sensitive filenames are tracked by Git:')
+        for item in suspicious:
+            print(f'{RED}  {item}{RESET}')
+    else:
+        success('No obvious secret filenames are tracked by Git.')
 
+
+
+def _secret_locations(root):
+    from .analysis import secret_kind
+    legacy_key = re.compile(r'\bsk-[A-Za-z0-9_-]{20,}\b')
+    for path in project_files(root):
+        text = read_text(path, max_bytes=1_000_000)
+        if text is None:
+            continue
+        for number, line_text in enumerate(text.splitlines(), 1):
+            if secret_kind(line_text) or legacy_key.search(line_text):
+                yield path, number
+
+
+
+def _project_command(args):
+    actions = {'inspect': project_inspect, 'stats': project_stats, 'health': project_health}
+    if args.project_action is None:
+        build_parser().parse_args(['project', '--help'])
+        return
+    actions[args.project_action]()
+
+
+
+def _git_command(args):
+    actions = {'status': git_status, 'info': git_info, 'branches': git_branches,
+               'remote': git_remote, 'summary': git_summary,
+               'log': lambda: git_log(args.limit), 'diff': lambda: git_diff(False),
+               'staged': lambda: git_diff(True)}
+    actions[args.action]()
+
+
+
+def run_args(args):
+    """Execute parsed arguments directly; never parse user input a second time."""
+    if not args.command:
+        interactive_menu()
+        return
     show_logo()
+    simple = {'system': system_info, 'summary': system_summary, 'inspect': project_inspect,
+              'stats': project_stats, 'health': project_health, 'network': network_info,
+              'env': environment_info, 'doctor': doctor, 'security': security_check,
+              'disk': disk_info, 'uptime': uptime, 'dev': dev_tools, 'duplicates': duplicate_files,
+              'todo': todo_scan, 'deps': dependency_info, 'manifest': project_manifest,
+              'dashboard': dashboard, 'about': about, 'benchmark': benchmark}
+    if args.command in simple:
+        return simple[args.command]()
+    actions = {
+        'project': lambda: _project_command(args), 'git': lambda: _git_command(args),
+        'ports': lambda: scan_ports('127.0.0.1', args.start, args.end),
+        'process': lambda: process_list(args.filter), 'tree': lambda: tree(args.depth),
+        'clean': lambda: clean_project(args.execute),
+        'search': lambda: search_project(args.query, args.regex, args.extension,
+                                         args.case_sensitive, max(1, args.max_results)),
+        'large': lambda: find_large_files(args.min_size, max(1, args.count)),
+        'hash': lambda: hash_file(args.file, args.algorithm), 'ping': lambda: ping_host(args.host),
+        'dns': lambda: dns_lookup(args.host), 'http': lambda: http_check(args.url),
+        'serve': lambda: serve(args.directory, args.port), 'report': lambda: report(args.output),
+    }
+    return actions[args.command]()
 
-    command = args.command
-
-    if command == "system":
-        system_info()
-    elif command == "summary":
-        system_summary()
-    elif command in {"inspect"}:
-        project_inspect()
-    elif command == "stats":
-        project_stats()
-    elif command == "health":
-        project_health()
-    elif command == "project":
-        if args.project_action == "inspect":
-            project_inspect()
-        elif args.project_action == "stats":
-            project_stats()
-        elif args.project_action == "health":
-            project_health()
-        else:
-            parser.parse_args(["project", "--help"])
-    elif command == "network":
-        network_info()
-    elif command == "ports":
-        scan_ports("127.0.0.1", args.start, args.end)
-    elif command == "process":
-        process_list(args.filter)
-    elif command == "env":
-        environment_info()
-    elif command == "tree":
-        tree(args.depth)
-    elif command == "clean":
-        clean_project(args.execute)
-    elif command == "doctor":
-        doctor()
-    elif command == "security":
-        security_check()
-    elif command == "disk":
-        disk_info()
-    elif command == "uptime":
-        uptime()
-    elif command == "dev":
-        dev_tools()
-    elif command == "search":
-        search_project(
-            args.query,
-            regex=args.regex,
-            extension=args.extension,
-            case_sensitive=args.case_sensitive,
-            max_results=max(1, args.max_results),
-        )
-    elif command == "duplicates":
-        duplicate_files()
-    elif command == "todo":
-        todo_scan()
-    elif command == "large":
-        find_large_files(args.min_size, max(1, args.count))
-    elif command == "hash":
-        hash_file(args.file, args.algorithm)
-    elif command == "ping":
-        ping_host(args.host)
-    elif command == "dns":
-        dns_lookup(args.host)
-    elif command == "http":
-        http_check(args.url)
-    elif command == "serve":
-        serve(args.directory, args.port)
-    elif command == "deps":
-        dependency_info()
-    elif command == "manifest":
-        project_manifest()
-    elif command == "dashboard":
-        dashboard()
-    elif command == "about":
-        about()
-    elif command == "benchmark":
-        benchmark()
-    elif command == "report":
-        report(args.output)
-    elif command == "git":
-        if args.action == "status":
-            git_status()
-        elif args.action == "log":
-            git_log(args.limit)
-        elif args.action == "info":
-            git_info()
-        elif args.action == "branches":
-            git_branches()
-        elif args.action == "remote":
-            git_remote()
-        elif args.action == "diff":
-            git_diff(False)
-        elif args.action == "staged":
-            git_diff(True)
-        elif args.action == "summary":
-            git_summary()
 
 def main():
-    """MSTTools package/console entry point."""
-    try:
-        if len(sys.argv) == 1:
-            interactive_menu()
-        else:
-            cli()
-    except KeyboardInterrupt:
-        print()
-        warning("Operation cancelled.")
-    except Exception as exc:
-        print()
-        error(f"Unexpected error: {exc}")
+    """Compatibility entry point for older installations."""
+    from .app import main as entry
+    entry()
 
 
 if __name__ == "__main__":

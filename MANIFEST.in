@@ -1,0 +1,5 @@
+include Start-MSTTools.cmd
+include README.tr.md CHANGELOG.md CONTRIBUTING.md SECURITY.md VALIDATION.md
+recursive-include docs *.md *.svg
+recursive-include tests *.py
+recursive-include .github *.yml *.md
