@@ -150,10 +150,11 @@ class IntegrationTests(unittest.TestCase):
 
 
 def _get_when_ready(url):
-    deadline = time.monotonic() + 8
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=1) as response:
+            with opener.open(url, timeout=1) as response:
                 return response.read()
         except urllib.error.URLError:
             time.sleep(0.05)

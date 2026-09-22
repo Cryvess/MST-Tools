@@ -1,3 +1,5 @@
+import contextlib
+import io
 import unittest
 from unittest.mock import patch
 from msttools import app, ui
@@ -15,7 +17,9 @@ class MenuTests(unittest.TestCase):
         with patch.object(ui.console, 'input', return_value='localhost'):
             args = app._menu_arguments('16')
         self.assertEqual(args, ['dns', 'localhost'])
-        self.assertEqual(app.run(args), 0)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(app.run(args), 0)
+        self.assertIn("127.0.0.1", output.getvalue())
 
     def test_dns_blank_cancels_before_dispatch(self):
         with patch.object(ui.console, 'input', return_value=''), self.assertRaises(ValueError):

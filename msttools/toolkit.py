@@ -181,6 +181,7 @@ def check_tls(host, port=443, timeout=8):
 
 
 def whitespace(root):
+    root = Path(root).resolve()
     config = settings(root)
     trailing, missing, errors = [], [], []
     for path in files(root, config['ignore'], errors):
