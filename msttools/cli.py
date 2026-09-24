@@ -8,6 +8,7 @@ import re
 import shutil
 import shlex
 import socket
+import socketserver
 import subprocess
 import sys
 import time
@@ -1581,6 +1582,14 @@ def benchmark():
 # LOCAL DEV SERVER
 # ============================================================
 
+class LocalHTTPServer(http.server.ThreadingHTTPServer):
+    """Loopback server that never needs DNS to start listening."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
 def serve(directory=".", port=8000):
     title("LOCAL DEVELOPMENT SERVER")
     root = Path(directory).resolve()
@@ -1599,7 +1608,7 @@ def serve(directory=".", port=8000):
 
     try:
         from functools import partial
-        server = http.server.ThreadingHTTPServer(
+        server = LocalHTTPServer(
             ("127.0.0.1", port), partial(QuietHandler, directory=str(root)))
     except OSError as exc:
         error(f"Could not start server: {exc}")

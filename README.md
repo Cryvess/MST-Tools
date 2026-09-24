@@ -45,8 +45,8 @@ Open your own project folder in a terminal, then run `mst`. The tool inspects th
 Use `mst -C` with a real directory path to select another workspace.
 If the console command is not on PATH, use `python -m msttools`.
 
-This GitHub release includes fixes packaged as **1.2.1**, while the terminal displays **MSTTools v1.2**.
-To install from the extracted source folder instead:
+This GitHub release includes fixes packaged as **1.2.2**, while the terminal displays **MSTTools v1.2**.
+PyPI currently provides 1.2.1. To install this release with the additional platform fixes, use the extracted source folder:
 
 ```console
 python -m pip install --upgrade .

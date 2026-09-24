@@ -131,15 +131,22 @@ class IntegrationTests(unittest.TestCase):
             cli.git_diff(staged=True)
         self.assertIn('updated', captured.getvalue())
 
+    def test_local_server_starts_without_dns(self):
+        with patch('socket.getfqdn', side_effect=AssertionError('Unexpected DNS lookup')):
+            server = cli.LocalHTTPServer(('127.0.0.1', 0), cli.http.server.SimpleHTTPRequestHandler)
+            try:
+                self.assertEqual(server.server_name, 'localhost')
+                self.assertGreater(server.server_port, 0)
+            finally:
+                server.server_close()
+
     def test_local_server_serves_selected_directory(self):
         (self.root / 'served.txt').write_text('MSTTools server integration')
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         repo = Path(app.__file__).resolve().parents[1]
-        process = subprocess.Popen([sys.executable, '-u', '-c',
-                                    'import faulthandler, runpy; faulthandler.dump_traceback_later(15); '
-                                    'runpy.run_module("msttools", run_name="__main__")', 'serve',
+        process = subprocess.Popen([sys.executable, '-u', '-m', 'msttools', 'serve',
                                     '--directory', str(self.root), '--port', str(port)], cwd=repo,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
@@ -153,7 +160,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertIsNone(process.poll())
         finally:
             process.terminate()
-            process.wait(timeout=5)
+            process.communicate(timeout=5)
 
 
 def _get_when_ready(url):

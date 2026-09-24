@@ -1,6 +1,12 @@
 # Changelog
 
-## MSTTools v1.2 — package 1.2.1
+## MSTTools v1.2 — package 1.2.2
+
+- Avoid reverse DNS during local server startup.
+- Normalize Windows short paths and macOS temporary workspace paths.
+- Improve integration diagnostics and cross-platform coverage.
+
+## 1.2.1
 
 - Prompt for the DNS hostname when menu option 16 is selected.
 - Keep results visible until Enter is pressed, then redraw the menu.

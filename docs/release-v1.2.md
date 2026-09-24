@@ -16,6 +16,8 @@ MSTTools v1.2 turns the v1.1 command-line toolkit into an interactive project co
 - DNS menu option 16 now asks for a hostname; empty input cancels cleanly.
 - Invalid menu numbers receive guidance instead of a parser error.
 - Menu option 24 previews cleanup; deletion requires an explicit command and confirmation.
+- Avoid reverse DNS during local HTTP server startup, fixing delays on macOS.
+- Normalize workspace paths, including Windows short paths and macOS temporary directories.
 - Fixed Git status column handling and Windows redirected-output character errors.
 - Refactored complex functions while retaining the default complexity threshold of 12.
 - Traversal skips links and generated directories. Reports and snapshots require explicit overwrite permission.
@@ -23,14 +25,14 @@ MSTTools v1.2 turns the v1.1 command-line toolkit into an interactive project co
 
 ## Installation and upgrade
 
-Package name: **msttool**. Terminal command: **mst**. Application label: **MSTTools v1.2**. The updated package metadata is **1.2.1**.
+Package name: **msttool**. Terminal command: **mst**. Application label: **MSTTools v1.2**. The updated package metadata is **1.2.2**.
 
 ```console
 python -m pip install --upgrade msttool
 mst
 ```
 
-Package 1.2.1 is available on PyPI. Alternatively, download and extract the attached source ZIP, open its `MSTTools` folder, and install from source:
+PyPI currently provides 1.2.1. The attached 1.2.2 packages additionally fix loopback-server startup and workspace paths across platforms. To install the exact GitHub release, download and extract the attached source ZIP, open its `MSTTools` folder, and install from source:
 
 ```console
 python -m pip install --upgrade .
