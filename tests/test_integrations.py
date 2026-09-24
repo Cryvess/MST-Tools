@@ -137,11 +137,18 @@ class IntegrationTests(unittest.TestCase):
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         repo = Path(app.__file__).resolve().parents[1]
-        process = subprocess.Popen([sys.executable, '-m', 'msttools', 'serve',
+        process = subprocess.Popen([sys.executable, '-u', '-c',
+                                    'import faulthandler, runpy; faulthandler.dump_traceback_later(15); '
+                                    'runpy.run_module("msttools", run_name="__main__")', 'serve',
                                     '--directory', str(self.root), '--port', str(port)], cwd=repo,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
-            content = _get_when_ready(f'http://127.0.0.1:{port}/served.txt')
+            try:
+                content = _get_when_ready(f'http://127.0.0.1:{port}/served.txt')
+            except AssertionError:
+                process.terminate()
+                log, _ = process.communicate(timeout=5)
+                self.fail(log.decode('utf-8', errors='replace'))
             self.assertEqual(content, b'MSTTools server integration')
             self.assertIsNone(process.poll())
         finally:
